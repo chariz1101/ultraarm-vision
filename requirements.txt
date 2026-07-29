@@ -1,5 +1,3 @@
-cv2
-math
-time
+opencv-python
 mediapipe
 pymycobot
