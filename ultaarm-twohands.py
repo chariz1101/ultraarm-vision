@@ -3,17 +3,15 @@ Two-hand gesture control for the myCobot ultraArmP340.
 
 Control scheme:
   RIGHT HAND (discrete / directional switch, neutral = closed fist):
-    - Thumb extended, other fingers curled       -> hold to move RIGHT (+Y)
-    - Pinky extended, other fingers curled       -> hold to move LEFT (-Y)
-    - Closed fist (neutral)                      -> no Y movement
+    - Thumb extended, other fingers curled        -> hold to rotate J1 +  (base, CW/CCW)
+    - Pinky extended, other fingers curled        -> hold to rotate J1 -
+    - Index finger extended, others curled        -> hold to rotate J2 +  (shoulder)
+    - Index + middle extended, others curled      -> hold to rotate J2 -
+    - Closed fist (neutral)                       -> no J1/J2 movement
 
   LEFT HAND (continuous / relative):
-    - Wrist vertical movement (frame-to-frame)  -> nudges Z (up/down)
-    - Hand size change (grows/shrinks)          -> nudges X (forward/back reach),
-                                                    used as a depth proxy since a
-                                                    single RGB camera can't measure
-                                                    true distance-from-camera.
-    - Closed fist / open hand                   -> suction ON / OFF (GPIO)
+    - Wrist vertical movement (frame-to-frame)    -> nudges J3 (elbow) up/down
+    - Closed fist / open hand                     -> suction ON / OFF (GPIO)
 
 IMPORTANT — camera mirroring:
   MediaPipe's left/right hand classification assumes the input image is
@@ -37,7 +35,7 @@ from pymycobot import ultraArmP340
 
 # --- Hardware / model configuration ---------------------------------------
 
-SERIAL_PORT = "COM10"
+SERIAL_PORT = "COM11"
 BAUD_RATE = 115200
 MODEL_PATH = "hand_landmarker.task"
 
@@ -47,66 +45,65 @@ MIRROR_CAMERA = True
 
 # --- Starting position (arm starts here after go_zero, then moves relatively) --
 
-START_X = 235.55
-START_Y = 0.0
-START_Z = 130.0
+# go_zero() already homes all joints to 0, so the starting joint target is
+# simply the zero pose.
+START_J1 = 0.0
+START_J2 = 0.0
+START_J3 = 0.0
 
-# --- Safe travel limits (mm) — clamp the target position to stay in range ---
+# --- Safe joint limits (degrees) — clamp the target angles to stay in range -
 
-X_MIN, X_MAX = 150.0, 300.0
-Y_MIN, Y_MAX = -250.0, 250.0
-Z_MIN, Z_MAX = 60.0, 130.0
+J1_MIN, J1_MAX = -150.0, 170.0
+J2_MIN, J2_MAX = -20.0, 90.0
+J3_MIN, J3_MAX = -5.0, 70.0
 
 # --- Gesture / geometry thresholds -----------------------------------------
 
 # Hand open/closed threshold: ratio of (fingertip-to-wrist) / (knuckle-to-wrist).
-# Below this ratio = closed fist. Used for the right hand's suction gesture.
+# Below this ratio = closed fist. Used for the left hand's suction gesture.
 CLOSED_HAND_RATIO_THRESHOLD = 1.1
 
 # Finger-extended threshold: a finger counts as "extended" when its tip is
 # this many times farther from the wrist than its middle knuckle (pip/ip).
-# Used for the left hand's thumb/pinky directional gesture.
+# Used for the right hand's thumb/pinky/index gestures.
 FINGER_EXTENDED_RATIO = 1.2
 
-# If True, "thumb extended" / "pinky extended" also require the OTHER
-# fingers to be curled (a clean, exclusive gesture). If False, it only
-# checks whether that one finger is extended, ignoring the rest of the hand.
+# If True, "thumb extended" / "pinky extended" / "index extended" / etc.
+# also require the OTHER fingers to be curled (a clean, exclusive gesture).
+# If False, it only checks whether the relevant finger(s) are extended,
+# ignoring the rest of the hand.
 REQUIRE_OTHER_FINGERS_CURLED = True
 
-# --- Right-hand incremental-motion tuning -----------------------------------
+# --- Left-hand incremental-motion tuning ------------------------------------
 
-# How many mm the target position shifts per pixel of frame-to-frame wrist
-# movement / hand-size change.
-# Bumped up again: 1.00 stays for Z, X pushed from 0.70 -> 1.10 for a much
-# more responsive forward/backward (X) reach control.
-SENSITIVITY_Z_MM_PER_PX = 1.00   # left wrist vertical movement -> Z
-SENSITIVITY_X_MM_PER_PX = 1.10   # left hand size change -> X
+# How many degrees the target J3 shifts per pixel of frame-to-frame wrist
+# vertical movement.
+SENSITIVITY_J3_DEG_PER_PX = 0.20   # left wrist vertical movement -> J3
 
-# Positive HAND_SIZE_SIGN means "hand looks bigger (closer to camera) ->
-# arm moves toward X_MAX (extends out)". Flip to -1 if that feels backwards.
-HAND_SIZE_SIGN = 1
-
-# Dead zones: ignore movement smaller than this (in pixels) to avoid drift
-# from camera/detection noise when the hand is basically still.
+# Dead zone: ignore wrist movement smaller than this (in pixels) to avoid
+# drift from camera/detection noise when the hand is basically still.
 DEAD_ZONE_WRIST_PX = 4
-DEAD_ZONE_SIZE_PX = 3
 
-# --- Left-hand directional-switch tuning ------------------------------------
+# --- Right-hand directional-switch tuning -----------------------------------
 
-# How fast Y moves (mm/sec) while the thumb-only or pinky-only gesture is
+# How fast J1 moves (deg/sec) while the thumb-only or pinky-only gesture is
 # held. Speed-based (not per-frame) so it's independent of camera frame rate.
-LEFT_HAND_Y_SPEED_MM_PER_SEC = 60.0
+RIGHT_HAND_J1_SPEED_DEG_PER_SEC = 30.0
+
+# How fast J2 moves (deg/sec) while the index-only or index+middle gesture
+# is held. Speed-based for the same reason.
+RIGHT_HAND_J2_SPEED_DEG_PER_SEC = 30.0
 
 # --- Shared motion / serial tuning ------------------------------------------
 
-# Minimum change (mm) in the target position required before we bother
-# sending a new set_coords command.
-MIN_MOVE_DELTA_MM = 1.5
+# Minimum change (degrees, treating [j1,j2,j3] as a 3-vector) required
+# before we bother sending a new set_angles command.
+MIN_MOVE_DELTA_DEG = 1.0
 
 # Minimum time (s) between move commands sent over serial.
 MOVE_INTERVAL = 0.1
 
-# Arm movement speed passed to set_coords.
+# Arm movement speed passed to set_angles.
 MOVE_SPEED = 50
 
 # --- Calibration -------------------------------------------------------
@@ -154,7 +151,7 @@ def create_hand_detector(model_path: str):
 def is_hand_closed(points, wrist_idx=WRIST_IDX, tip_idx=INDEX_TIP_IDX, mcp_idx=INDEX_MCP_IDX):
     """
     Determine whether the hand is closed (fist) based on index-finger geometry.
-    Used for the right hand's suction on/off gesture.
+    Used for the left hand's suction on/off gesture.
     """
     wrist = points[wrist_idx]
     index_tip = points[tip_idx]
@@ -185,15 +182,20 @@ def is_finger_extended(points, tip_idx, pip_idx, wrist_idx=WRIST_IDX, ratio=FING
     return tip_to_wrist > pip_to_wrist * ratio
 
 
-def classify_left_hand_gesture(points):
+def classify_right_hand_gesture(points):
     """
-    Classify the left hand's gesture into one of: "thumb", "pinky", "neutral".
+    Classify the right hand's gesture into one of:
+    "thumb", "pinky", "index", "index_middle", "neutral".
 
     - "thumb": thumb extended (and, if REQUIRE_OTHER_FINGERS_CURLED, all
-      other fingers curled) -> move arm right (+Y).
+      other fingers curled) -> rotate J1 + .
     - "pinky": pinky extended (and, if REQUIRE_OTHER_FINGERS_CURLED, all
-      other fingers curled) -> move arm left (-Y).
-    - "neutral": closed fist / anything else -> no Y movement.
+      other fingers curled) -> rotate J1 - .
+    - "index": index finger extended (and, if REQUIRE_OTHER_FINGERS_CURLED,
+      all other fingers curled) -> rotate J2 + .
+    - "index_middle": index AND middle fingers extended (and, if
+      REQUIRE_OTHER_FINGERS_CURLED, thumb/ring/pinky curled) -> rotate J2 - .
+    - "neutral": closed fist / anything else -> no movement.
     """
     thumb_ext = is_finger_extended(points, THUMB_TIP_IDX, THUMB_IP_IDX)
     index_ext = is_finger_extended(points, INDEX_TIP_IDX, INDEX_PIP_IDX)
@@ -202,29 +204,25 @@ def classify_left_hand_gesture(points):
     pinky_ext = is_finger_extended(points, PINKY_TIP_IDX, PINKY_PIP_IDX)
 
     if REQUIRE_OTHER_FINGERS_CURLED:
-        others_curled_for_thumb = not (index_ext or middle_ext or ring_ext or pinky_ext)
-        others_curled_for_pinky = not (index_ext or middle_ext or ring_ext or thumb_ext)
-        if thumb_ext and others_curled_for_thumb:
+        if thumb_ext and not (index_ext or middle_ext or ring_ext or pinky_ext):
             return "thumb"
-        if pinky_ext and others_curled_for_pinky:
+        if pinky_ext and not (index_ext or middle_ext or ring_ext or thumb_ext):
             return "pinky"
+        if index_ext and middle_ext and not (thumb_ext or ring_ext or pinky_ext):
+            return "index_middle"
+        if index_ext and not (thumb_ext or middle_ext or ring_ext or pinky_ext):
+            return "index"
         return "neutral"
     else:
         if thumb_ext:
             return "thumb"
         if pinky_ext:
             return "pinky"
+        if index_ext and middle_ext:
+            return "index_middle"
+        if index_ext:
+            return "index"
         return "neutral"
-
-
-def hand_size_metric(points, wrist_idx=WRIST_IDX, ref_idx=MIDDLE_MCP_IDX):
-    """
-    Distance (px) between wrist and middle-finger knuckle.
-    Used as a rough depth proxy for the right hand's X (reach) control.
-    """
-    wrist = points[wrist_idx]
-    ref = points[ref_idx]
-    return math.hypot(ref[0] - wrist[0], ref[1] - wrist[1])
 
 
 def clamp(value, low, high):
@@ -256,7 +254,7 @@ def wait_for_calibration(cap, detector):
 
     This is the "lock in the base position" step: nothing moves until the
     user deliberately signals readiness, so the arm doesn't jump to its
-    starting coordinates the instant the script launches.
+    starting joint pose the instant the script launches.
 
     Returns True once calibration succeeds, or False if the user pressed
     'q' to quit before calibrating.
@@ -336,24 +334,23 @@ def main():
         detector.close()
         return
 
-    # Internally-tracked target position (since set_coords needs absolute
-    # coordinates, but we're driving it with relative/discrete hand control).
-    # This is only moved to now, after calibration locks it in.
-    target_x, target_y, target_z = START_X, START_Y, START_Z
-    mc.set_coords([target_x, target_y, target_z], MOVE_SPEED)
+    # Internally-tracked target joint angles (since set_angles needs
+    # absolute angles, but we're driving it with relative/discrete hand
+    # control). This is only moved to now, after calibration locks it in.
+    target_j1, target_j2, target_j3 = START_J1, START_J2, START_J3
+    mc.set_angles([target_j1, target_j2, target_j3], MOVE_SPEED)
 
     # Ensure suction starts OFF, matching current_gpio_state below.
     mc.set_gpio_state(0)
 
-    # Previous-frame values for the LEFT hand's relative X/Z control.
-    prev_depth_wrist_px = None
-    prev_depth_hand_size = None
+    # Previous-frame value for the LEFT hand's relative J3 control.
+    prev_wrist_px = None
 
     # State tracked to avoid redundant/noisy serial commands.
     current_gpio_state = 0  # last suction state sent (0=off, 1=on); starts OFF post-calibration
-    last_sent_pos = (target_x, target_y, target_z)
+    last_sent_pos = (target_j1, target_j2, target_j3)
     last_move_time = time.time()
-    last_frame_time = time.time()  # used for speed-based right-hand Y control
+    last_frame_time = time.time()  # used for speed-based right-hand J1/J2 control
 
     try:
         while True:
@@ -376,7 +373,7 @@ def main():
 
             results = detector.detect(mp_image)
 
-            depth_hand_seen = False
+            j3_hand_seen = False
             direction_hand_seen = False
 
             if results.hand_landmarks:
@@ -387,9 +384,8 @@ def main():
                     handedness_label = results.handedness[i][0].category_name  # "Left" or "Right"
 
                     if handedness_label == "Left":
-                        depth_hand_seen = True
+                        j3_hand_seen = True
                         wrist_px = points[WRIST_IDX]
-                        size_px = hand_size_metric(points)
 
                         # --- Suction control (open/closed hand -> GPIO) ---
                         hand_closed = is_hand_closed(points)
@@ -399,22 +395,15 @@ def main():
                             mc.set_gpio_state(current_gpio_state)
                             print(f"Suction: {'ON (1)' if current_gpio_state == 1 else 'OFF (0)'}")
 
-                        # --- Relative Z (vertical wrist movement) and X (hand size) ---
-                        if prev_depth_wrist_px is not None and prev_depth_hand_size is not None:
-                            dy_px = wrist_px[1] - prev_depth_wrist_px[1]
-                            dsize_px = size_px - prev_depth_hand_size
-
+                        # --- Relative J3 (vertical wrist movement) --------
+                        if prev_wrist_px is not None:
+                            dy_px = wrist_px[1] - prev_wrist_px[1]
                             dy_px = apply_dead_zone(dy_px, DEAD_ZONE_WRIST_PX)
-                            dsize_px = apply_dead_zone(dsize_px, DEAD_ZONE_SIZE_PX)
 
-                            target_z += -dy_px * SENSITIVITY_Z_MM_PER_PX  # up (smaller y) -> +Z
-                            target_x += HAND_SIZE_SIGN * dsize_px * SENSITIVITY_X_MM_PER_PX
+                            target_j3 += dy_px * SENSITIVITY_J3_DEG_PER_PX  # up (smaller y) -> -J3
+                            target_j3 = clamp(target_j3, J3_MIN, J3_MAX)
 
-                            target_x = clamp(target_x, X_MIN, X_MAX)
-                            target_z = clamp(target_z, Z_MIN, Z_MAX)
-
-                        prev_depth_wrist_px = wrist_px
-                        prev_depth_hand_size = size_px
+                        prev_wrist_px = wrist_px
 
                         draw_hand_overlay(img, points, label="L")
                         state_str = "CLOSED" if hand_closed else "OPEN"
@@ -423,39 +412,43 @@ def main():
 
                     elif handedness_label == "Right":
                         direction_hand_seen = True
-                        gesture = classify_left_hand_gesture(points)
+                        gesture = classify_right_hand_gesture(points)
 
-                        # Speed-based Y nudge: framerate-independent movement
-                        # while the gesture is held.
+                        # Speed-based J1/J2 nudge: framerate-independent
+                        # movement while the gesture is held.
                         if gesture == "thumb":
-                            target_y += LEFT_HAND_Y_SPEED_MM_PER_SEC * dt
+                            target_j1 += RIGHT_HAND_J1_SPEED_DEG_PER_SEC * dt
                         elif gesture == "pinky":
-                            target_y -= LEFT_HAND_Y_SPEED_MM_PER_SEC * dt
+                            target_j1 -= RIGHT_HAND_J1_SPEED_DEG_PER_SEC * dt
+                        elif gesture == "index":
+                            target_j2 += RIGHT_HAND_J2_SPEED_DEG_PER_SEC * dt
+                        elif gesture == "index_middle":
+                            target_j2 -= RIGHT_HAND_J2_SPEED_DEG_PER_SEC * dt
 
-                        target_y = clamp(target_y, Y_MIN, Y_MAX)
+                        target_j1 = clamp(target_j1, J1_MIN, J1_MAX)
+                        target_j2 = clamp(target_j2, J2_MIN, J2_MAX)
 
                         draw_hand_overlay(img, points, label="R")
                         cv2.putText(img, f"Right gesture: {gesture.upper()}",
                                     (20, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 0), 2)
 
-            if not depth_hand_seen:
-                # Right hand left the frame: reset its relative-tracking
+            if not j3_hand_seen:
+                # Left hand left the frame: reset its relative-tracking
                 # baseline so we don't jump when it reappears.
-                prev_depth_wrist_px = None
-                prev_depth_hand_size = None
+                prev_wrist_px = None
 
             # Throttle serial writes: only send if enough time has passed
             # AND the position changed enough to matter.
             if now - last_move_time > MOVE_INTERVAL:
                 moved_enough = math.dist(
-                    (target_x, target_y, target_z), last_sent_pos
-                ) >= MIN_MOVE_DELTA_MM
+                    (target_j1, target_j2, target_j3), last_sent_pos
+                ) >= MIN_MOVE_DELTA_DEG
                 if moved_enough:
-                    mc.set_coords([target_x, target_y, target_z], MOVE_SPEED)
-                    last_sent_pos = (target_x, target_y, target_z)
+                    mc.set_angles([target_j1, target_j2, target_j3], MOVE_SPEED)
+                    last_sent_pos = (target_j1, target_j2, target_j3)
                     last_move_time = now
 
-            cv2.putText(img, f"Target X:{target_x:.1f} Y:{target_y:.1f} Z:{target_z:.1f}",
+            cv2.putText(img, f"Target J1:{target_j1:.1f} J2:{target_j2:.1f} J3:{target_j3:.1f}",
                         (20, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
             cv2.imshow("ultraArm Two-Hand Control", img)
