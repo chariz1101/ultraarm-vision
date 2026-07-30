@@ -27,7 +27,7 @@ from pymycobot import ultraArmP340
 
 # --- Hardware / model configuration ---------------------------------------
 
-SERIAL_PORT = "COM11"
+SERIAL_PORT = "COM8"
 BAUD_RATE = 115200
 MODEL_PATH = "hand_landmarker.task"
 
@@ -53,8 +53,8 @@ CLOSED_HAND_RATIO_THRESHOLD = 1.1
 
 # How many mm the target position shifts per pixel of frame-to-frame wrist
 # movement. Increase for faster response, decrease for finer control.
-SENSITIVITY_Y_MM_PER_PX = 0.15   # horizontal wrist movement -> Y
-SENSITIVITY_Z_MM_PER_PX = 0.15   # vertical wrist movement -> Z
+SENSITIVITY_Y_MM_PER_PX = 0.30   # horizontal wrist movement -> Y
+SENSITIVITY_Z_MM_PER_PX = 0.30   # vertical wrist movement -> Z
 
 # How many mm the target X shifts per pixel of change in hand-size
 # (wrist-to-middle-knuckle distance). Positive HAND_SIZE_SIGN means "hand

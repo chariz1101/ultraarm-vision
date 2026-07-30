@@ -7,7 +7,7 @@ from mediapipe.tasks.python import vision
 from pymycobot import ultraArmP340
 
 # --- 1. Initialize MyCobot ultraArmP340 ---
-mc = ultraArmP340("COM11", 115200)
+mc = ultraArmP340("COM8", 115200)
 mc.go_zero()
 
 # Fixed X and Y coordinates (from your script parameters)
