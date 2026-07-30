@@ -53,18 +53,23 @@ CLOSED_HAND_RATIO_THRESHOLD = 1.1
 
 # How many mm the target position shifts per pixel of frame-to-frame wrist
 # movement. Increase for faster response, decrease for finer control.
-SENSITIVITY_Y_MM_PER_PX = 0.30   # horizontal wrist movement -> Y
-SENSITIVITY_Z_MM_PER_PX = 0.30   # vertical wrist movement -> Z
+# Bumped up from 0.30 -> 0.60 so a hand can traverse the full Y/Z travel
+# range without needing to leave the camera's field of view.
+SENSITIVITY_Y_MM_PER_PX = 0.60   # horizontal wrist movement -> Y
+SENSITIVITY_Z_MM_PER_PX = 0.60   # vertical wrist movement -> Z
 
 # How many mm the target X shifts per pixel of change in hand-size
 # (wrist-to-middle-knuckle distance). Positive HAND_SIZE_SIGN means "hand
 # looks bigger (closer to camera) -> arm moves toward X_MAX (extends out)".
 # Flip HAND_SIZE_SIGN to -1 if that direction feels backwards for you.
-SENSITIVITY_X_MM_PER_PX = 0.20
+# Bumped up from 0.20 -> 0.40 for the same reason as Y/Z above.
+SENSITIVITY_X_MM_PER_PX = 0.40
 HAND_SIZE_SIGN = 1
 
 # Dead zones: ignore movement smaller than this (in pixels) to avoid drift
 # from camera/detection noise when the hand is basically still.
+# Kept the same as before — dead zone filters noise, sensitivity controls
+# speed, so these two are independent tuning knobs.
 DEAD_ZONE_WRIST_PX = 4
 DEAD_ZONE_SIZE_PX = 3
 
@@ -96,7 +101,7 @@ HAND_CONNECTIONS = [
 ]
 
 
-def create_hand_detector(model_path: str) -> vision.HandLandmarker:
+def create_hand_detector(model_path: str):
     """Build a single-hand MediaPipe HandLandmarker for static-image mode."""
     base_options = python.BaseOptions(model_asset_path=model_path)
     options = vision.HandLandmarkerOptions(
