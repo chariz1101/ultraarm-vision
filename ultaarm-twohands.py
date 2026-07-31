@@ -33,7 +33,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from pymycobot import ultraArmP340
 
-# --- Hardware / model configuration ---------------------------------------
+# Hardware / model configuration
 
 SERIAL_PORT = "COM11"
 BAUD_RATE = 115200
@@ -43,7 +43,7 @@ MODEL_PATH = "hand_landmarker.task"
 # docstring above for why this matters for hand-label accuracy.
 MIRROR_CAMERA = True
 
-# --- Starting position (arm starts here after go_zero, then moves relatively) --
+# Starting position (arm starts here after go_zero, then moves relatively
 
 # go_zero() already homes all joints to 0, so the starting joint target is
 # simply the zero pose.
@@ -51,13 +51,13 @@ START_J1 = 0.0
 START_J2 = 0.0
 START_J3 = 0.0
 
-# --- Safe joint limits (degrees) — clamp the target angles to stay in range -
+# Safe joint limits (degrees) — clamp the target angles to stay in range
 
 J1_MIN, J1_MAX = -150.0, 170.0
 J2_MIN, J2_MAX = -20.0, 90.0
 J3_MIN, J3_MAX = -5.0, 70.0
 
-# --- Gesture / geometry thresholds -----------------------------------------
+# Gesture / geometry thresholds
 
 # Hand open/closed threshold: ratio of (fingertip-to-wrist) / (knuckle-to-wrist).
 # Below this ratio = closed fist. Used for the left hand's suction gesture.
@@ -74,7 +74,7 @@ FINGER_EXTENDED_RATIO = 1.2
 # ignoring the rest of the hand.
 REQUIRE_OTHER_FINGERS_CURLED = True
 
-# --- Left-hand incremental-motion tuning ------------------------------------
+# Left-hand incremental-motion tuning
 
 # How many degrees the target J3 shifts per pixel of frame-to-frame wrist
 # vertical movement.
