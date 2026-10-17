@@ -137,4 +137,4 @@ ultraarm-vision/
 - [MediaPipe](https://developers.google.com/mediapipe) for hand landmark detection
 - [pymycobot](https://github.com/elephantrobotics/pymycobot) for arm control
 - [Elephant Robotics](https://www.elephantrobotics.com/) for the myCobot ultraArm P340
-- [RedGutzTrading](https://www.redgutz.com/) for letting us use the myCobot UltraArm P340
+- [Red Gutz Trading](https://www.redgutz.com/) for letting us use the myCobot UltraArm P340
